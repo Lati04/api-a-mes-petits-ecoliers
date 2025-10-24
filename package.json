@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "postinstall": "npx prisma generate"
+    "postinstall": "npx prisma generate && npm install --save @types/react @types/node"
   },
   "dependencies": {
     "@prisma/client": "^6.18.0",
