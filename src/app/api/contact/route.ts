@@ -16,13 +16,10 @@ function getCorsHeaders(req: NextRequest) {
     "http://localhost:5173",
   ];
 
-  // Autorise toujours front principal
-  const allowOrigin =
-    allowedOrigins.find((o) => origin.startsWith(o)) ||
-    "https://a-mes-petits-ecoliers.onrender.com";
+  const isAllowed = allowedOrigins.includes(origin);
 
   return {
-    "Access-Control-Allow-Origin": allowOrigin,
+    "Access-Control-Allow-Origin": isAllowed ? origin : allowedOrigins[0],
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type",
   };
