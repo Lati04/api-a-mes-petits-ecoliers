@@ -5,10 +5,11 @@ import nodemailer from "nodemailer";
 export const runtime = "nodejs";
 const prisma = new PrismaClient();
 
-// Anti-spam basique
+// --- Anti-spam ---
 const lastSubmissions = new Map<string, number>();
 const RATE_LIMIT_MS = 30_000;
 
+// --- CORS ---
 function getCorsHeaders(req: NextRequest) {
   const origin = req.headers.get("origin") || "";
   const allowedOrigins = [
@@ -25,12 +26,12 @@ function getCorsHeaders(req: NextRequest) {
   };
 }
 
-// OPTIONS
+// --- OPTIONS ---
 export async function OPTIONS(req: NextRequest) {
   return new NextResponse(null, { status: 204, headers: getCorsHeaders(req) });
 }
 
-// POST contact
+// --- POST contact ---
 export async function POST(req: NextRequest) {
   try {
     const { email } = await req.json();
@@ -52,39 +53,51 @@ export async function POST(req: NextRequest) {
     }
     lastSubmissions.set(email, now);
 
-    // Enregistre dans la BDD
-    await prisma.contact.create({ data: { email } });
+    // === ENREGISTREMENT BDD ===
+    try {
+      await prisma.contact.create({ data: { email } });
+    } catch (dbErr) {
+      console.error("Erreur BDD :", dbErr);
+      return NextResponse.json(
+        { error: "Impossible d'enregistrer le contact." },
+        { status: 500, headers: getCorsHeaders(req) }
+      );
+    }
 
-    // === CONFIGURATION SMTP Brevo ===
-    const transporter = nodemailer.createTransport({
-      host: "smtp-relay.brevo.com",
-      port: 587,
-      secure: false,
-      auth: {
-        user: process.env.BREVO_EMAIL, 
-        pass: process.env.BREVO_SMTP_PASSWORD, 
-      },
-    });
+    // === ENVOI EMAIL ===
+    try {
+      const transporter = nodemailer.createTransport({
+        host: "smtp-relay.brevo.com",
+        port: 587,
+        secure: false,
+        auth: {
+          user: process.env.BREVO_EMAIL,
+          pass: process.env.BREVO_SMTP_PASSWORD,
+        },
+      });
 
-    // Envoi vers moi
-    await transporter.sendMail({
-      from: `"À mes petits écoliers" <${process.env.BREVO_EMAIL}>`,
-      to: process.env.CONTACT_EMAIL,
-      subject: "📬 Nouveau contact depuis le site",
-      text: `Un visiteur a laissé son e-mail : ${email}`,
-    });
+      // Vers moi
+      await transporter.sendMail({
+        from: `"À mes petits écoliers" <${process.env.BREVO_EMAIL}>`,
+        to: process.env.CONTACT_EMAIL,
+        subject: "📬 Nouveau contact depuis le site",
+        text: `Un visiteur a laissé son e-mail : ${email}`,
+      });
 
-    // Envoi vers le visiteur
-    await transporter.sendMail({
-      from: `"Latifa - À mes petits écoliers" <${process.env.BREVO_EMAIL}>`,
-      to: email,
-      subject: "Merci pour ton message 🌷",
-      text: `Bonjour 🌸\n\nMerci d’avoir pris contact ! Je te répondrai dès que possible.\n\nLatifa`,
-    });
+      // Vers le visiteur
+      await transporter.sendMail({
+        from: `"Latifa - À mes petits écoliers" <${process.env.BREVO_EMAIL}>`,
+        to: email,
+        subject: "Merci pour ton message 🌷",
+        text: `Bonjour 🌸\n\nMerci d’avoir pris contact ! Je te répondrai dès que possible.\n\nLatifa`,
+      });
+    } catch (mailErr) {
+      console.error("Erreur SMTP :", mailErr);
+    }
 
     return NextResponse.json({ success: true }, { headers: getCorsHeaders(req) });
   } catch (err) {
-    console.error("Erreur /api/contact :", err);
+    console.error("Erreur POST /api/contact :", err);
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "Erreur serveur" },
       { status: 500, headers: getCorsHeaders(req) }

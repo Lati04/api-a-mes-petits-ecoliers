@@ -4,7 +4,7 @@ import { PrismaClient } from "@prisma/client";
 export const runtime = "nodejs";
 const prisma = new PrismaClient();
 
-// --- CORS --- //
+// --- CORS ---
 function getCorsHeaders(req: NextRequest) {
   const origin = req.headers.get("origin") || "";
   const allowedOrigins = [
@@ -21,21 +21,20 @@ function getCorsHeaders(req: NextRequest) {
   };
 }
 
-// --- OPTIONS (préflight) --- //
+// --- OPTIONS (préflight) ---
 export async function OPTIONS(req: NextRequest) {
   return new NextResponse(null, { status: 204, headers: getCorsHeaders(req) });
 }
 
-// --- GET --- //
+// --- GET all comments ---
 export async function GET(req: NextRequest) {
   try {
     const comments = await prisma.comment.findMany({
       orderBy: { createdAt: "desc" },
     });
-
     return NextResponse.json({ comments }, { headers: getCorsHeaders(req) });
-  } catch (error) {
-    console.error("Erreur GET /api/comments :", error);
+  } catch (err) {
+    console.error("Erreur GET /api/comments :", err);
     return NextResponse.json(
       { error: "Erreur serveur" },
       { status: 500, headers: getCorsHeaders(req) }
@@ -43,7 +42,7 @@ export async function GET(req: NextRequest) {
   }
 }
 
-// --- POST --- //
+// --- POST new comment ---
 export async function POST(req: NextRequest) {
   try {
     const { name, message } = await req.json();
