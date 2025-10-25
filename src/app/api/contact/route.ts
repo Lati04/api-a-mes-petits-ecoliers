@@ -1,14 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { PrismaClient } from "@prisma/client";
+import nodemailer from "nodemailer";
 
 export const runtime = "nodejs";
 const prisma = new PrismaClient();
 
-// Anti-spam basique (en mémoire)
+// Anti-spam basique
 const lastSubmissions = new Map<string, number>();
 const RATE_LIMIT_MS = 30_000;
 
-// Helper CORS
 function getCorsHeaders(req: NextRequest) {
   const origin = req.headers.get("origin") || "";
   const allowedOrigins = [
@@ -22,20 +22,12 @@ function getCorsHeaders(req: NextRequest) {
   };
 }
 
-// OPTIONS preflight
+// OPTIONS
 export async function OPTIONS(req: NextRequest) {
   return new NextResponse(null, { status: 204, headers: getCorsHeaders(req) });
 }
 
-// GET all contacts (optionnel)
-export async function GET(req: NextRequest) {
-  const contacts = await prisma.contact.findMany({
-    orderBy: { createdAt: "desc" },
-  });
-  return NextResponse.json({ contacts }, { headers: getCorsHeaders(req) });
-}
-
-// POST new contact
+// POST contact
 export async function POST(req: NextRequest) {
   try {
     const { email } = await req.json();
@@ -49,8 +41,7 @@ export async function POST(req: NextRequest) {
 
     // Anti-spam
     const now = Date.now();
-    const lastTime = lastSubmissions.get(email);
-    if (lastTime && now - lastTime < RATE_LIMIT_MS) {
+    if (lastSubmissions.get(email) && now - lastSubmissions.get(email)! < RATE_LIMIT_MS) {
       return NextResponse.json(
         { error: "Trop de tentatives rapprochées." },
         { status: 429, headers: getCorsHeaders(req) }
@@ -58,35 +49,34 @@ export async function POST(req: NextRequest) {
     }
     lastSubmissions.set(email, now);
 
-    // === Stockage dans PostgreSQL via Prisma ===
+    // Enregistre dans la BDD
     await prisma.contact.create({ data: { email } });
 
-    // === Envoi via Brevo API ===
-    const sendinblueApiKey = process.env.BREVO_API_KEY!;
-    const siteEmail = process.env.BREVO_EMAIL!;
-
-    // Mail vers site
-    await fetch("https://api.brevo.com/v3/smtp/email", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "api-key": sendinblueApiKey },
-      body: JSON.stringify({
-        sender: { name: "Site Coloriages", email: siteEmail },
-        to: [{ email: siteEmail }],
-        subject: "📬 Nouveau contact depuis le site",
-        textContent: `Un visiteur a laissé son e-mail : ${email}`,
-      }),
+    // === CONFIGURATION SMTP Brevo ===
+    const transporter = nodemailer.createTransport({
+      host: "smtp-relay.brevo.com",
+      port: 587,
+      secure: false,
+      auth: {
+        user: process.env.BREVO_EMAIL, 
+        pass: process.env.BREVO_SMTP_PASSWORD, 
+      },
     });
 
-    // Accusé de réception utilisateur
-    await fetch("https://api.brevo.com/v3/smtp/email", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "api-key": sendinblueApiKey },
-      body: JSON.stringify({
-        sender: { name: "Latifa - À mes petits écoliers", email: siteEmail },
-        to: [{ email }],
-        subject: "Merci pour ton message 🌷",
-        textContent: `Bonjour 🌸\n\nMerci d’avoir pris contact ! Je te répondrai dès que possible.\n\nLatifa`,
-      }),
+    // Envoi vers moi
+    await transporter.sendMail({
+      from: `"À mes petits écoliers" <${process.env.BREVO_EMAIL}>`,
+      to: process.env.CONTACT_EMAIL,
+      subject: "📬 Nouveau contact depuis le site",
+      text: `Un visiteur a laissé son e-mail : ${email}`,
+    });
+
+    // Envoi vers le visiteur
+    await transporter.sendMail({
+      from: `"Latifa - À mes petits écoliers" <${process.env.BREVO_EMAIL}>`,
+      to: email,
+      subject: "Merci pour ton message 🌷",
+      text: `Bonjour 🌸\n\nMerci d’avoir pris contact ! Je te répondrai dès que possible.\n\nLatifa`,
     });
 
     return NextResponse.json({ success: true }, { headers: getCorsHeaders(req) });
