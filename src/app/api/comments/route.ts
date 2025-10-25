@@ -16,6 +16,7 @@ function getCorsHeaders(req: NextRequest) {
     "Access-Control-Allow-Origin": isAllowed ? origin : allowedOrigins[0],
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type",
+     "Content-Type": "application/json; charset=utf-8",
   };
 }
 
