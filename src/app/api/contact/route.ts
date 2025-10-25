@@ -15,8 +15,11 @@ function getCorsHeaders(req: NextRequest) {
     "https://a-mes-petits-ecoliers.onrender.com",
     "http://localhost:5173",
   ];
+
+  const isAllowed = allowedOrigins.includes(origin);
+
   return {
-    "Access-Control-Allow-Origin": allowedOrigins.includes(origin) ? origin : "",
+    "Access-Control-Allow-Origin": isAllowed ? origin : allowedOrigins[0],
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type",
   };
