@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { PrismaClient } from "@prisma/client";
-import nodemailer from "nodemailer";
+
 
 export const runtime = "nodejs";
 const prisma = new PrismaClient();
@@ -16,9 +16,7 @@ function getCorsHeaders(req: NextRequest) {
     "https://a-mes-petits-ecoliers.onrender.com",
     "http://localhost:5173",
   ];
-
   const isAllowed = allowedOrigins.includes(origin);
-
   return {
     "Access-Control-Allow-Origin": isAllowed ? origin : allowedOrigins[0],
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
@@ -26,7 +24,7 @@ function getCorsHeaders(req: NextRequest) {
   };
 }
 
-// --- OPTIONS ---
+// --- OPTIONS (préflight) ---
 export async function OPTIONS(req: NextRequest) {
   return new NextResponse(null, { status: 204, headers: getCorsHeaders(req) });
 }
@@ -56,6 +54,7 @@ export async function POST(req: NextRequest) {
     // === ENREGISTREMENT BDD ===
     try {
       await prisma.contact.create({ data: { email } });
+      console.log("Contact enregistré en BDD :", email);
     } catch (dbErr) {
       console.error("Erreur BDD :", dbErr);
       return NextResponse.json(
@@ -64,35 +63,56 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // === ENVOI EMAIL ===
+    // === ENVOI EMAIL via API Brevo ===
     try {
-      const transporter = nodemailer.createTransport({
-        host: "smtp-relay.brevo.com",
-        port: 587,
-        secure: false,
-        auth: {
-          user: process.env.BREVO_EMAIL,
-          pass: process.env.BREVO_SMTP_PASSWORD,
-        },
-      });
+      const BREVO_API_KEY = process.env.BREVO_API_KEY;
+      const CONTACT_EMAIL = process.env.CONTACT_EMAIL;
+
+      if (!BREVO_API_KEY || !CONTACT_EMAIL) {
+        throw new Error("Clé API Brevo ou email contact manquant");
+      }
+
+      const bodyToAdmin = {
+        sender: { name: "À mes petits écoliers", email: CONTACT_EMAIL },
+        to: [{ email: CONTACT_EMAIL }],
+        subject: "📬 Nouveau contact depuis le site",
+        textContent: `Un visiteur a laissé son e-mail : ${email}`,
+      };
+
+      const bodyToVisitor = {
+        sender: { name: "Latifa - À mes petits écoliers", email: CONTACT_EMAIL },
+        to: [{ email }],
+        subject: "Merci pour ton message 🌷",
+        textContent: `Bonjour 🌸\n\nMerci d’avoir pris contact ! Je te répondrai dès que possible.\n\nLatifa`,
+      };
 
       // Vers moi
-      await transporter.sendMail({
-        from: `"À mes petits écoliers" <${process.env.BREVO_EMAIL}>`,
-        to: process.env.CONTACT_EMAIL,
-        subject: "📬 Nouveau contact depuis le site",
-        text: `Un visiteur a laissé son e-mail : ${email}`,
+      await fetch("https://api.brevo.com/v3/smtp/email", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "api-key": BREVO_API_KEY,
+        },
+        body: JSON.stringify(bodyToAdmin),
       });
 
       // Vers le visiteur
-      await transporter.sendMail({
-        from: `"Latifa - À mes petits écoliers" <${process.env.BREVO_EMAIL}>`,
-        to: email,
-        subject: "Merci pour ton message 🌷",
-        text: `Bonjour 🌸\n\nMerci d’avoir pris contact ! Je te répondrai dès que possible.\n\nLatifa`,
+      await fetch("https://api.brevo.com/v3/smtp/email", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "api-key": BREVO_API_KEY,
+        },
+        body: JSON.stringify(bodyToVisitor),
       });
+
+      console.log("Emails envoyés via Brevo :", email);
     } catch (mailErr) {
-      console.error("Erreur SMTP :", mailErr);
+      console.error("Erreur API Brevo :", mailErr);
+      return NextResponse.json(
+        { error: "Impossible d'envoyer l'email. Vérifie la clé API." },
+        { status: 500, headers: getCorsHeaders(req) }
+      );
     }
 
     return NextResponse.json({ success: true }, { headers: getCorsHeaders(req) });

@@ -11,9 +11,7 @@ function getCorsHeaders(req: NextRequest) {
     "https://a-mes-petits-ecoliers.onrender.com",
     "http://localhost:5173",
   ];
-
   const isAllowed = allowedOrigins.includes(origin);
-
   return {
     "Access-Control-Allow-Origin": isAllowed ? origin : allowedOrigins[0],
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
@@ -32,6 +30,7 @@ export async function GET(req: NextRequest) {
     const comments = await prisma.comment.findMany({
       orderBy: { createdAt: "desc" },
     });
+    console.log("Récupération des commentaires :", comments.length);
     return NextResponse.json({ comments }, { headers: getCorsHeaders(req) });
   } catch (err) {
     console.error("Erreur GET /api/comments :", err);
@@ -60,6 +59,8 @@ export async function POST(req: NextRequest) {
         message: message.trim(),
       },
     });
+
+    console.log("Nouveau commentaire créé :", comment);
 
     return NextResponse.json(
       { success: true, comments: [comment] },
